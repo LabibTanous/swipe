@@ -56,7 +56,7 @@ RULES:
 - For "what do you do" explain the app briefly then ask what they need`;
 
 function extractIntent(text: string): { reply: string; intent: ParsedIntent | null } {
-  const match = text.match(/SWIPE_READY:([\s\S]*?\})/);
+  const match = text.match(/SWIPE_READY:\s*(\{[\s\S]*?\})\s*/);
   if (!match) return { reply: text.trim(), intent: null };
   try {
     const parsed = JSON.parse(match[1]) as ParsedIntent;
