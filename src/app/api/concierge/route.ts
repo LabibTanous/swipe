@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCardsByCategory } from "@/lib/mockData";
 import { ConciergeRequest, ConciergeResponse, ParsedIntent, Category } from "@/types";
 
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 const SYSTEM_PROMPT = `You are Sami — the AI concierge inside an app called Swipe.
 
