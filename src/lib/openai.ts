@@ -59,7 +59,7 @@ RULES:
 
 // ─── Parse intent from AI response ───────────────────────────
 export function extractIntent(text: string): { reply: string; intent: ParsedIntent | null } {
-  const match = text.match(/SWIPE_READY:(\{.*?\})/s);
+  const match = text.match(/SWIPE_READY:(\{[\s\S]*?\})/);
 
   if (!match) {
     return { reply: text.trim(), intent: null };
