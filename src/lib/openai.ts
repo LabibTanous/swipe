@@ -69,7 +69,7 @@ export function extractIntent(text: string): { reply: string; intent: ParsedInte
     const jsonStr = match[1];
     const parsed = JSON.parse(jsonStr) as ParsedIntent;
     // Clean up the reply — remove the JSON line
-    const reply = text.replace(/SWIPE_READY:\{.*?\}/s, "").trim();
+    const reply = text.replace(/SWIPE_READY:(\\{[\\s\\S]*?\\})/, "").trim();
     return {
       reply: reply || "Perfect — here's what I found for you! Swipe right to save anything you like. 👇",
       intent: { ...parsed, readyToSearch: true },
