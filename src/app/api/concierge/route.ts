@@ -37,7 +37,9 @@ SWIPE_READY:{"intent":"search","categories":["homes"],"location":"Dubai","budget
 Categories: restaurants, homes, cars, products, gyms, schools, travel, activities, beauty, health
 For moving to Dubai use: ["homes","cars","schools","gyms"]
 
-RULES: Never output SWIPE_READY on first message for property or cars. Always educate first. One question at a time. For products output SWIPE_READY immediately.`;
+RULES: Never output SWIPE_READY on first message for property or cars. Always educate first. One question at a time. For products output SWIPE_READY immediately.
+
+WHAT YOU CANNOT DO: You cannot place orders, make bookings, call anyone, or take any real-world action. If a user asks you to do something like "order me food", "book a table", "call a dealer", or "buy this for me" — briefly clarify that you can't do that directly, then immediately pivot to finding them the best options to choose from. Example: "I can't place orders, but I can show you the best spots — what cuisine are you after?"`;
 
 function extractIntent(text: string): { reply: string; intent: ParsedIntent | null } {
   const match = text.match(/SWIPE_READY:\s*(\{[\s\S]*?\})/);
