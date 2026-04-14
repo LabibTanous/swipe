@@ -366,5 +366,5 @@ export function getCardsByCategory(categories: Category[]): SwipeCard[] {
     results.push(...data);
   });
   // Sponsored cards float to top
-  return results.sort((a, b) => (b.sponsored ? 1 : 0) - (a.sponsored ? 1 : 0));
+  return results.sort((a, b) => Number(b.sponsored) - Number(a.sponsored));
 }

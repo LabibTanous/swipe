@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { Component, ReactNode, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AppScreen,
@@ -14,6 +14,40 @@ import HomeScreen from "@/components/HomeScreen";
 import ConciergeChat from "@/components/ConciergeChat";
 import SwipeDeck from "@/components/SwipeDeck";
 import SavedScreen from "@/components/SavedScreen";
+
+// ─── Error Boundary ──────────────────────────────────────────
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error.message };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-screen gap-4 px-8 text-center bg-bg">
+          <div className="text-5xl">⚠️</div>
+          <h2 className="text-white font-bold text-lg">Something went wrong</h2>
+          <p className="text-white/40 text-sm leading-relaxed">{this.state.message}</p>
+          <button
+            onClick={() => this.setState({ hasError: false, message: "" })}
+            className="px-6 py-3 bg-white text-black font-semibold rounded-2xl text-sm"
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Screen transition variants ──────────────────────────────
 const slideVariants = {
@@ -157,6 +191,7 @@ export default function App() {
 
   // ─── Render ────────────────────────────────────────────────
   return (
+    <ErrorBoundary>
     <div className="flex justify-center bg-bg min-h-screen">
       <div className="relative w-full max-w-[430px] h-screen overflow-hidden bg-bg">
         {/* Status bar */}
@@ -215,5 +250,6 @@ export default function App() {
         </AnimatePresence>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

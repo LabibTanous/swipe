@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCardsByCategory } from "@/lib/mockData";
 import { ConciergeRequest, ConciergeResponse, ParsedIntent, Category } from "@/types";
 
+// ─── Rate limiting (10 requests per minute per IP) ───────────
+const RATE_LIMIT_REQUESTS = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const rateLimitMap = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const timestamps = (rateLimitMap.get(ip) ?? []).filter((t) => t > windowStart);
+  if (timestamps.length >= RATE_LIMIT_REQUESTS) return true;
+  rateLimitMap.set(ip, [...timestamps, now]);
+  return false;
+}
+
 const SYSTEM_PROMPT = `You are Sami, a world-class AI concierge inside an app called Swipe, specialising in Dubai. You have 20 years of experience living and working in Dubai. You know every neighbourhood, price range, school, gym, restaurant, and car dealer. You think like a trusted advisor, not a search engine.
 
 YOUR PERSONALITY: Warm, sharp, direct. Like a brilliant friend who knows everything about Dubai. You never rush to show results. You qualify first, advise second, show options third. You educate users on what their budget realistically gets them in Dubai. Never ask more than ONE question at a time. Keep each message to 3-4 sentences max. Speak casually but with authority. No corporate speak.
@@ -42,11 +56,20 @@ function extractIntent(text: string): { reply: string; intent: ParsedIntent | nu
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (isRateLimited(ip)) {
+      return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 });
+    }
+
     const body: ConciergeRequest = await req.json();
     const { message, conversationHistory } = body;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
+    }
+
+    if (message.length > 500) {
+      return NextResponse.json({ error: "Message too long (max 500 characters)" }, { status: 400 });
     }
 
     const apiKey = process.env.GROQ_API_KEY;

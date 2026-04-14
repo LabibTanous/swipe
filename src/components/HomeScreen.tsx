@@ -10,6 +10,8 @@ const PILLS = [
   "🤙 Activities with friends",
 ];
 
+const MAX_INPUT_LENGTH = 500;
+
 interface Props {
   onSearch: (query: string) => void;
   savedCount: number;
@@ -20,8 +22,9 @@ export default function HomeScreen({ onSearch, savedCount, onViewSaved }: Props)
   const [input, setInput] = useState("");
 
   const go = () => {
-    if (!input.trim()) return;
-    onSearch(input.trim());
+    const val = input.trim();
+    if (!val || val.length > MAX_INPUT_LENGTH) return;
+    onSearch(val);
     setInput("");
   };
 
@@ -56,10 +59,11 @@ export default function HomeScreen({ onSearch, savedCount, onViewSaved }: Props)
         <input
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT_LENGTH))}
           onKeyDown={handleKey}
           placeholder="What do you need?"
           autoFocus
+          maxLength={MAX_INPUT_LENGTH}
           className="w-full bg-bg-2 border border-border focus:border-white/20 rounded-[28px] px-5 pr-14 py-[18px] text-white text-[16px] placeholder-white/25 outline-none transition-all"
         />
         <button

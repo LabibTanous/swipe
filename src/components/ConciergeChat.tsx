@@ -12,6 +12,8 @@ const EXAMPLE_PROMPTS = [
   "Plan a weekend activity with friends",
 ];
 
+const MAX_INPUT_LENGTH = 500;
+
 interface Props {
   conversation: ConversationMessage[];
   onSend: (message: string) => void;
@@ -37,7 +39,7 @@ export default function ConciergeChat({
 
   const handleSend = () => {
     const val = input.trim();
-    if (!val || isLoading) return;
+    if (!val || isLoading || val.length > MAX_INPUT_LENGTH) return;
     setInput("");
     onSend(val);
   };
@@ -131,26 +133,37 @@ export default function ConciergeChat({
 
       {/* Input bar */}
       <div className="flex-shrink-0 flex items-end gap-3 px-4 pb-7 pt-3 border-t border-border bg-bg">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Ask me anything..."
-          rows={1}
-          className={clsx(
-            "flex-1 bg-bg-3 border border-border rounded-[22px] px-4 py-3",
-            "text-white text-[15px] placeholder-white/30 resize-none outline-none",
-            "max-h-[100px] leading-relaxed",
-            "focus:border-white/20 transition-colors"
+        <div className="flex-1 flex flex-col">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT_LENGTH))}
+            onKeyDown={handleKey}
+            placeholder="Ask me anything..."
+            rows={1}
+            className={clsx(
+              "w-full bg-bg-3 border border-border rounded-[22px] px-4 py-3",
+              "text-white text-[15px] placeholder-white/30 resize-none outline-none",
+              "max-h-[100px] leading-relaxed",
+              "focus:border-white/20 transition-colors",
+              input.length >= MAX_INPUT_LENGTH && "border-red-500/50"
+            )}
+            style={{ height: "auto" }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${el.scrollHeight}px`;
+            }}
+          />
+          {input.length > MAX_INPUT_LENGTH * 0.8 && (
+            <span className={clsx(
+              "text-[11px] text-right px-2 pt-1",
+              input.length >= MAX_INPUT_LENGTH ? "text-red-400" : "text-white/30"
+            )}>
+              {input.length}/{MAX_INPUT_LENGTH}
+            </span>
           )}
-          style={{ height: "auto" }}
-          onInput={(e) => {
-            const el = e.currentTarget;
-            el.style.height = "auto";
-            el.style.height = `${el.scrollHeight}px`;
-          }}
-        />
+        </div>
         <button
           onClick={handleSend}
           disabled={!input.trim() || isLoading}
