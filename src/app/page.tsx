@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, ReactNode, useState, useCallback } from "react";
+import { Component, ReactNode, useState, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AppScreen,
@@ -69,6 +69,13 @@ const SCREEN_ORDER: Record<AppScreen, number> = {
   home: 0, chat: 1, swipe: 2, saved: 3,
 };
 
+const CAT_LABELS: Record<string, string> = {
+  restaurants: "Restaurants", homes: "Homes", cars: "Cars",
+  products: "Shopping", gyms: "Gyms", schools: "Schools",
+  travel: "Travel", activities: "Activities", beauty: "Beauty",
+  health: "Health",
+};
+
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("home");
   const [prevScreen, setPrevScreen] = useState<AppScreen>("home");
@@ -78,6 +85,45 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [swipeTitle, setSwipeTitle] = useState("Results");
   const [intent, setIntent] = useState<ParsedIntent | null>(null);
+  const [pendingQuery, setPendingQuery] = useState<string | null>(null);
+
+  // ─── Hydrate from localStorage on mount ───────────────────
+  useEffect(() => {
+    try {
+      const storedSaved = localStorage.getItem("swipe_saved");
+      if (storedSaved) setSavedCards(JSON.parse(storedSaved));
+    } catch {}
+
+    try {
+      const storedConvo = localStorage.getItem("swipe_conversation");
+      if (storedConvo) {
+        const parsed = JSON.parse(storedConvo);
+        setConversation(
+          parsed.map((m: ConversationMessage & { timestamp: string }) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }))
+        );
+      }
+    } catch {}
+  }, []);
+
+  // ─── Persist saved cards ───────────────────────────────────
+  useEffect(() => {
+    try {
+      localStorage.setItem("swipe_saved", JSON.stringify(savedCards));
+    } catch {}
+  }, [savedCards]);
+
+  // ─── Persist conversation (last 30 messages) ──────────────
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "swipe_conversation",
+        JSON.stringify(conversation.slice(-30))
+      );
+    } catch {}
+  }, [conversation]);
 
   const navTo = useCallback((next: AppScreen) => {
     setPrevScreen(screen);
@@ -85,6 +131,18 @@ export default function App() {
   }, [screen]);
 
   const dir = SCREEN_ORDER[screen] - SCREEN_ORDER[prevScreen];
+
+  // ─── Fire pending query once chat screen has mounted ──────
+  useEffect(() => {
+    if (screen === "chat" && pendingQuery) {
+      const query = pendingQuery;
+      setPendingQuery(null);
+      handleSend(query);
+    }
+    // handleSend is intentionally excluded — it's stable by the time
+    // this fires because conversation has already been reset to []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, pendingQuery]);
 
   // ─── Send message to AI ────────────────────────────────────
   const handleSend = useCallback(async (message: string) => {
@@ -120,7 +178,6 @@ export default function App() {
         throw new Error((data as { error?: string }).error ?? "Request failed");
       }
 
-      // Add AI reply to conversation
       const aiMsg: ConversationMessage = {
         role: "assistant",
         content: data.reply,
@@ -128,33 +185,34 @@ export default function App() {
       };
       setConversation((prev) => [...prev, aiMsg]);
 
-      // If we have cards ready, go to swipe deck
       if (data.intent?.readyToSearch && data.cards.length > 0) {
         setIntent(data.intent);
         setCards(data.cards);
 
-        // Build a nice title from categories
-        const catLabels: Record<string, string> = {
-          restaurants: "Restaurants", homes: "Homes", cars: "Cars",
-          products: "Shopping", gyms: "Gyms", schools: "Schools",
-          travel: "Travel", activities: "Activities", beauty: "Beauty",
-          health: "Health",
-        };
         const cats = data.intent.categories;
         const title =
           cats.length === 1
-            ? catLabels[cats[0]] ?? "Results"
+            ? CAT_LABELS[cats[0]] ?? "Results"
             : `${cats.length} Categories`;
         setSwipeTitle(title);
 
-        // Small delay so user reads the reply
         setTimeout(() => navTo("swipe"), 900);
+      } else if (data.intent?.readyToSearch && data.cards.length === 0) {
+        // AI was ready to search but no cards matched — tell the user
+        const noResultsMsg: ConversationMessage = {
+          role: "assistant",
+          content: "Hmm, I couldn't find any matches for that right now. Try tweaking your search — different area, budget, or category?",
+          timestamp: new Date(),
+        };
+        setConversation((prev) => [...prev, noResultsMsg]);
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
       const errorMsg: ConversationMessage = {
         role: "assistant",
-        content:
-          "Sorry, something went wrong. Check your API key in .env.local and try again.",
+        content: msg.includes("429")
+          ? "You're sending messages a bit fast — give it a moment and try again."
+          : "Sorry, something went wrong. Check your API key in .env.local and try again.",
         timestamp: new Date(),
       };
       setConversation((prev) => [...prev, errorMsg]);
@@ -168,6 +226,7 @@ export default function App() {
     setConversation([]);
     setCards([]);
     setIntent(null);
+    try { localStorage.removeItem("swipe_conversation"); } catch {}
     navTo("home");
   }, [navTo]);
 
@@ -176,12 +235,11 @@ export default function App() {
     setConversation([]);
     setCards([]);
     setIntent(null);
+    setPendingQuery(query);
     navTo("chat");
-    // Small delay so chat screen is mounted before sending
-    setTimeout(() => handleSend(query), 100);
-  }, [handleSend, navTo]);
+  }, [navTo]);
 
-  // ─── Save a card ───────────────────────────────────────────
+  // ─── Save / unsave a card ──────────────────────────────────
   const handleSave = useCallback((card: SwipeCard) => {
     setSavedCards((prev) => {
       if (prev.find((c) => c.id === card.id)) return prev;
@@ -189,67 +247,72 @@ export default function App() {
     });
   }, []);
 
+  const handleUnsave = useCallback((id: string) => {
+    setSavedCards((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
   // ─── Render ────────────────────────────────────────────────
   return (
     <ErrorBoundary>
-    <div className="flex justify-center bg-bg min-h-screen">
-      <div className="relative w-full max-w-[430px] h-screen overflow-hidden bg-bg">
-        {/* Status bar */}
-        <div className="absolute top-0 left-0 right-0 z-10 flex justify-between px-6 pt-4 text-[12px] font-semibold text-white/30 pointer-events-none">
-          <span>9:41</span>
-          <span>● ● ●</span>
+      <div className="flex justify-center bg-bg min-h-screen">
+        <div className="relative w-full max-w-[430px] h-screen overflow-hidden bg-bg">
+          {/* Status bar */}
+          <div className="absolute top-0 left-0 right-0 z-10 flex justify-between px-6 pt-4 text-[12px] font-semibold text-white/30 pointer-events-none">
+            <span>9:41</span>
+            <span>● ● ●</span>
+          </div>
+
+          <AnimatePresence initial={false} custom={dir} mode="popLayout">
+            <motion.div
+              key={screen}
+              custom={dir}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={transition}
+              className="absolute inset-0 flex flex-col pt-10"
+            >
+              {screen === "home" && (
+                <HomeScreen
+                  onSearch={handleHomeSearch}
+                  savedCount={savedCards.length}
+                  onViewSaved={() => navTo("saved")}
+                />
+              )}
+
+              {screen === "chat" && (
+                <ConciergeChat
+                  conversation={conversation}
+                  onSend={handleSend}
+                  isLoading={isLoading}
+                  onBack={handleNewSearch}
+                  isFirstMessage={conversation.length === 0}
+                />
+              )}
+
+              {screen === "swipe" && (
+                <SwipeDeck
+                  cards={cards}
+                  onSave={handleSave}
+                  onDone={() => navTo("saved")}
+                  onBack={() => navTo("chat")}
+                  title={swipeTitle}
+                />
+              )}
+
+              {screen === "saved" && (
+                <SavedScreen
+                  savedCards={savedCards}
+                  onBack={() => navTo(cards.length > 0 ? "swipe" : "home")}
+                  onNewSearch={handleNewSearch}
+                  onUnsave={handleUnsave}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
-
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
-          <motion.div
-            key={screen}
-            custom={dir}
-            variants={slideVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={transition}
-            className="absolute inset-0 flex flex-col pt-10"
-          >
-            {screen === "home" && (
-              <HomeScreen
-                onSearch={handleHomeSearch}
-                savedCount={savedCards.length}
-                onViewSaved={() => navTo("saved")}
-              />
-            )}
-
-            {screen === "chat" && (
-              <ConciergeChat
-                conversation={conversation}
-                onSend={handleSend}
-                isLoading={isLoading}
-                onBack={handleNewSearch}
-                isFirstMessage={conversation.length === 0}
-              />
-            )}
-
-            {screen === "swipe" && (
-              <SwipeDeck
-                cards={cards}
-                onSave={handleSave}
-                onDone={() => navTo("saved")}
-                onBack={() => navTo("chat")}
-                title={swipeTitle}
-              />
-            )}
-
-            {screen === "saved" && (
-              <SavedScreen
-                savedCards={savedCards}
-                onBack={() => navTo(cards.length > 0 ? "swipe" : "home")}
-                onNewSearch={handleNewSearch}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
       </div>
-    </div>
     </ErrorBoundary>
   );
 }

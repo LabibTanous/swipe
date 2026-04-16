@@ -1,13 +1,14 @@
 "use client";
 
 import { SwipeCard } from "@/types";
-import { Phone, ShoppingCart, Calendar, ChevronLeft, ExternalLink, MessageCircle } from "lucide-react";
+import { Phone, ShoppingCart, Calendar, ChevronLeft, ExternalLink, MessageCircle, X } from "lucide-react";
 import clsx from "clsx";
 
 interface Props {
   savedCards: SwipeCard[];
   onBack: () => void;
   onNewSearch: () => void;
+  onUnsave: (id: string) => void;
 }
 
 const ctaConfig = {
@@ -18,14 +19,9 @@ const ctaConfig = {
   whatsapp: { icon: MessageCircle, bg: "bg-[#25D366]", label: "WhatsApp" },
 };
 
-export default function SavedScreen({ savedCards, onBack, onNewSearch }: Props) {
+export default function SavedScreen({ savedCards, onBack, onNewSearch, onUnsave }: Props) {
   const handleCTA = (card: SwipeCard) => {
-    const { type, value } = card.cta;
-    if (type === "call" || type === "whatsapp") {
-      window.location.href = value;
-    } else if (type === "buy" || type === "book" || type === "navigate") {
-      window.open(value, "_blank", "noopener,noreferrer");
-    }
+    window.open(card.cta.value, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -82,17 +78,26 @@ export default function SavedScreen({ savedCards, onBack, onNewSearch }: Props) 
                       {card.category}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleCTA(card)}
-                    className={clsx(
-                      "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-bold whitespace-nowrap flex-shrink-0",
-                      "text-white transition-all active:scale-95",
-                      cta.bg
-                    )}
-                  >
-                    <CtaIcon size={12} />
-                    {card.cta.label}
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleCTA(card)}
+                      className={clsx(
+                        "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-bold whitespace-nowrap",
+                        "text-white transition-all active:scale-95",
+                        cta.bg
+                      )}
+                    >
+                      <CtaIcon size={12} />
+                      {card.cta.label}
+                    </button>
+                    <button
+                      onClick={() => onUnsave(card.id)}
+                      className="w-7 h-7 rounded-full bg-bg-3 border border-border flex items-center justify-center text-white/30 hover:text-red-400 hover:border-red-500/30 transition-all active:scale-90"
+                      aria-label="Remove"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
                 </div>
               );
             })}
