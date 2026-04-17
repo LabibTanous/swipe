@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, ReactNode, useState, useCallback, useEffect } from "react";
+import { Component, ReactNode, useState, useCallback, useEffect, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AppScreen,
@@ -87,6 +87,21 @@ export default function App() {
   const [intent, setIntent] = useState<ParsedIntent | null>(null);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
 
+  // ─── Session preference summary (passed to AI each request) ─
+  const sessionPrefs = useMemo(() => {
+    if (savedCards.length === 0) return undefined;
+    const counts = savedCards.reduce((acc, card) => {
+      acc[card.category] = (acc[card.category] ?? 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const top = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cat, n]) => (n > 1 ? `${cat} ×${n}` : cat))
+      .join(", ");
+    return `User has saved ${savedCards.length} item(s) this session. Interests: ${top}.`;
+  }, [savedCards]);
+
   // ─── Hydrate from localStorage on mount ───────────────────
   useEffect(() => {
     try {
@@ -164,6 +179,7 @@ export default function App() {
       const body: ConciergeRequest = {
         message,
         conversationHistory: historyForAPI,
+        sessionPrefs,
       };
 
       const res = await fetch("/api/concierge", {

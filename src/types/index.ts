@@ -18,8 +18,11 @@ export interface ParsedIntent {
   location?: string;
   budget?: string;
   details: string;
-  followUpQuestion?: string; // if AI needs more info
-  readyToSearch: boolean;    // false = ask follow-up first
+  followUpQuestion?: string;
+  readyToSearch: boolean;
+  buyerStage?: "exploring" | "comparing" | "ready";
+  priceSignal?: "budget" | "mid" | "luxury" | null;
+  urgency?: "today" | "this-week" | "planning" | null;
 }
 
 // ─── Cards ───────────────────────────────────────────────────
@@ -38,11 +41,11 @@ export interface SwipeCard {
   cta: {
     type: CTAType;
     label: string;
-    value: string; // phone number, URL, address, etc.
+    value: string;
   };
   rating?: number;
   distance?: string;
-  imageEmoji?: string; // large hero emoji
+  imageEmoji?: string;
 }
 
 // ─── App State ───────────────────────────────────────────────
@@ -68,6 +71,7 @@ export interface AppState {
 export interface ConciergeRequest {
   message: string;
   conversationHistory: { role: "user" | "assistant"; content: string }[];
+  sessionPrefs?: string;
 }
 
 export interface ConciergeResponse {

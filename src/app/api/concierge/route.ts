@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCardsByCategory } from "@/lib/mockData";
+import { fetchCards } from "@/lib/adapters";
 import { SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { ConciergeRequest, ConciergeResponse, ParsedIntent, Category } from "@/types";
 
@@ -17,12 +17,13 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-// ─── Valid categories set for sanitising AI output ───────────
+// ─── Valid categories allowlist ───────────────────────────────
 const VALID_CATEGORIES = new Set<Category>([
   "restaurants", "homes", "cars", "products", "gyms",
   "schools", "travel", "activities", "beauty", "health",
 ]);
 
+// ─── Intent parser ────────────────────────────────────────────
 function extractIntent(text: string): { reply: string; intent: ParsedIntent | null } {
   const match = text.match(/SWIPE_READY:\s*(\{[\s\S]*?\})/);
   if (!match) return { reply: text.trim(), intent: null };
@@ -46,12 +47,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body: ConciergeRequest = await req.json();
-    const { message, conversationHistory } = body;
+    const { message, conversationHistory, sessionPrefs } = body;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
-
     if (message.length > 500) {
       return NextResponse.json({ error: "Message too long (max 500 characters)" }, { status: 400 });
     }
@@ -61,8 +61,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
     }
 
-    const messages = [
+    // Inject session preferences as an extra system message if present
+    const systemMessages = [
       { role: "system", content: SYSTEM_PROMPT },
+      ...(sessionPrefs
+        ? [{ role: "system", content: `User preferences this session: ${sessionPrefs}` }]
+        : []),
+    ];
+
+    const messages = [
+      ...systemMessages,
       ...(conversationHistory ?? []).map((m) => ({
         role: m.role,
         content: m.content,
@@ -93,14 +101,14 @@ export async function POST(req: NextRequest) {
     const content = data.choices?.[0]?.message?.content ?? "";
     const { reply, intent } = extractIntent(content);
 
-    // Strip any categories the AI hallucinated that don't exist in mock data
-    const safeCategories = (intent?.categories ?? []).filter((c): c is Category =>
-      VALID_CATEGORIES.has(c as Category)
+    // Sanitise categories — strip anything the AI hallucinated
+    const safeCategories = (intent?.categories ?? []).filter(
+      (c): c is Category => VALID_CATEGORIES.has(c as Category)
     );
 
     const cards =
       intent?.readyToSearch && safeCategories.length > 0
-        ? getCardsByCategory(safeCategories)
+        ? await fetchCards({ ...intent, categories: safeCategories })
         : [];
 
     const result: ConciergeResponse = {

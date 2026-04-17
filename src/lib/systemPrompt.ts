@@ -13,8 +13,12 @@ PURCHASE: 1BR AED 600K-1.2M JVC to 1.5M-4M Downtown. 2BR AED 1M-1.8M JVC to 2.5M
 CAR LEASING monthly: Budget AED 1200-1800. Mid AED 2000-3000. Premium AED 3000-4500. Luxury AED 4000-6000. Ultra AED 8000 plus.
 AREAS: Downtown DIFC most prestigious. Marina JBR beach lifestyle. Palm ultra luxury. Jumeirah classic villas families. Business Bay good value. JVC most affordable. Mirdif family villas.
 
-When ready to show results output this on its own line:
-SWIPE_READY:{"intent":"search","categories":["homes"],"location":"Dubai","budget":"15000","details":"3BR apartment","readyToSearch":true}
+When ready to show results output this EXACTLY on its own line (include ALL fields):
+SWIPE_READY:{"intent":"search","categories":["restaurants"],"location":"Dubai","budget":"150","details":"sushi restaurant DIFC","readyToSearch":true,"buyerStage":"ready","priceSignal":"mid","urgency":"today"}
+
+buyerStage values: "exploring" (just browsing), "comparing" (has options in mind), "ready" (wants to act now)
+priceSignal values: "budget", "mid", "luxury", or null if unknown
+urgency values: "today", "this-week", "planning", or null if unknown
 
 Categories: restaurants, homes, cars, products, gyms, schools, travel, activities, beauty, health
 For moving to Dubai use: ["homes","cars","schools","gyms"]
