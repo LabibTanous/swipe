@@ -111,6 +111,7 @@ async function callGemini(
 ): Promise<string> {
   const nonSystem = messages.filter(m => m.role !== "system")
 
+  // v1 doesn't support systemInstruction — prepend system prompt to first user message
   const contents = nonSystem.map((m, i) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: i === 0 ? `${SYSTEM}\n\n${m.content}` : m.content }],
@@ -143,13 +144,14 @@ export async function POST(req: NextRequest) {
 
     const messages = [
       { role: "system", content: SYSTEM },
-      ...(conversationHistory ?? []).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+      ...(conversationHistory ?? []).map((m: any) => ({ role: m.role, content: m.content })),
       { role: "user", content: message },
     ]
 
-    // ── Provider waterfall ──
+    // ── Provider waterfall — tries each in order until one works ──
     const providers = [
       {
+        // Best quality — 100k tokens/day
         name: "Groq-70b",
         key: process.env.GROQ_API_KEY,
         call: (key: string) => callOpenAICompat(
@@ -160,6 +162,7 @@ export async function POST(req: NextRequest) {
         ),
       },
       {
+        // Faster, 500k tokens/day — kicks in when 70b hits daily limit
         name: "Groq-8b",
         key: process.env.GROQ_API_KEY,
         call: (key: string) => callOpenAICompat(
@@ -170,6 +173,7 @@ export async function POST(req: NextRequest) {
         ),
       },
       {
+        // Free Google fallback
         name: "Gemini",
         key: process.env.GEMINI_API_KEY,
         call: (key: string) => callGemini(key, messages),
@@ -180,10 +184,13 @@ export async function POST(req: NextRequest) {
     const errors: string[] = []
 
     for (const provider of providers) {
-      if (!provider.key) { errors.push(`${provider.name}: no key`); continue }
+      if (!provider.key) {
+        errors.push(`${provider.name}: no key`)
+        continue
+      }
       try {
         content = await provider.call(provider.key)
-        if (content) break
+        if (content) break // success — stop trying
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Unknown error"
         errors.push(`${provider.name}: ${msg.slice(0, 120)}`)
@@ -192,7 +199,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (!content) {
-      return NextResponse.json({ error: errors.join(" | ") }, { status: 503 })
+      return NextResponse.json(
+        { error: errors.join(" | ") },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({ reply: content })

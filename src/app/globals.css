@@ -6,7 +6,7 @@
 html, body { height: 100%; overflow: hidden; background: #000; color: #fff; }
 ::-webkit-scrollbar { display: none; }
 * { scrollbar-width: none; }
-body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { -webkit-font-smoothing: antialiased; }
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(16px); }
@@ -28,8 +28,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   0%, 100% { opacity: 0.4; transform: scale(1); }
   50%       { opacity: 1;   transform: scale(1.08); }
 }
-.anim-fade-up  { animation: fadeUp  0.35s cubic-bezier(0.16,1,0.3,1) both; }
-.anim-fade-in  { animation: fadeIn  0.3s ease both; }
-.anim-slide-up { animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
-.anim-toast    { animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
-.anim-pulse    { animation: pulse-soft 1.6s ease-in-out infinite; }
+.anim-fade-up   { animation: fadeUp  0.35s cubic-bezier(0.16,1,0.3,1) both; }
+.anim-fade-in   { animation: fadeIn  0.3s ease both; }
+.anim-slide-up  { animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+.anim-toast     { animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
+.anim-pulse     { animation: pulse-soft 1.6s ease-in-out infinite; }
