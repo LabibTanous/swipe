@@ -10,33 +10,51 @@ export function rankCards(cards: SwipeCard[], intent: ParsedIntent): SwipeCard[]
 function scoreCard(card: SwipeCard, intent: ParsedIntent): number {
   let score = 0;
 
-  // Paid placement — floats up but can't dominate over a 5-star result
-  if (card.sponsored) score += 40;
+  // ── Preference match (highest priority) ──────────────────
+  // An explicit user request (cuisine, type, feature) must dominate.
+  // Sponsored placement cannot override what the user asked for.
+  if (intent.details) {
+    const keywords = intent.details
+      .toLowerCase()
+      .split(/[\s,]+/)
+      .filter((w) => w.length > 2);
 
-  // Rating quality
-  if (card.rating) {
-    if (card.rating >= 4.7) score += 20;
-    else if (card.rating >= 4.3) score += 12;
-    else if (card.rating >= 4.0) score += 6;
+    const tagMatches = card.tags.filter((t) =>
+      keywords.some((kw) => t.toLowerCase().includes(kw))
+    ).length;
+
+    const nameMatch = keywords.some((kw) =>
+      card.name.toLowerCase().includes(kw)
+    );
+
+    const descMatch = keywords.some((kw) =>
+      card.description.toLowerCase().includes(kw)
+    );
+
+    score += tagMatches * 25;
+    if (nameMatch) score += 20;
+    if (descMatch) score += 10;
   }
 
-  // Budget signal match
+  // ── Sponsored placement ───────────────────────────────────
+  // Reduced weight so it can't override an explicit preference match
+  if (card.sponsored) score += 20;
+
+  // ── Rating quality ────────────────────────────────────────
+  if (card.rating) {
+    if (card.rating >= 4.7) score += 15;
+    else if (card.rating >= 4.3) score += 10;
+    else if (card.rating >= 4.0) score += 5;
+  }
+
+  // ── Budget signal match ───────────────────────────────────
   score += budgetScore(card, intent);
 
-  // Real data (Google Places) gets a slight boost over mock placeholders
+  // ── Real data boost ───────────────────────────────────────
   if (card.id.startsWith("gp-")) score += 8;
 
-  // Tag match against user's detail string
-  if (intent.details) {
-    const details = intent.details.toLowerCase();
-    const matchedTags = card.tags.filter((t) =>
-      details.includes(t.toLowerCase())
-    ).length;
-    score += matchedTags * 5;
-  }
-
-  // Buyer stage: ready buyers should see higher-confidence results first
-  if (intent.buyerStage === "ready" && card.rating && card.rating >= 4.5) score += 10;
+  // ── Buyer stage ───────────────────────────────────────────
+  if (intent.buyerStage === "ready" && card.rating && card.rating >= 4.5) score += 8;
 
   return score;
 }

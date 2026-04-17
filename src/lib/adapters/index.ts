@@ -11,6 +11,9 @@ const realAdapters: DataAdapter[] = [];
 
 if (process.env.GOOGLE_PLACES_API_KEY) {
   realAdapters.push(new GooglePlacesAdapter(process.env.GOOGLE_PLACES_API_KEY));
+  console.log("[adapters] Google Places adapter registered");
+} else {
+  console.warn("[adapters] GOOGLE_PLACES_API_KEY not set — using mock data only");
 }
 
 const mockAdapter = new MockAdapter();
