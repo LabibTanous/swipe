@@ -1,15 +1,3 @@
-export interface ParsedIntent {
-  intent: string
-  categories: string[]
-  location: string
-  budget: string
-  details: string
-  readyToSearch: boolean
-  buyerStage?: string
-  priceSignal?: "luxury" | "budget" | "mid"
-  urgency?: string
-}
-
 export type Category =
   | "restaurants" | "homes" | "cars" | "products"
   | "gyms" | "schools" | "travel" | "beauty"
