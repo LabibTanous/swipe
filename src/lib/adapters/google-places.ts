@@ -99,7 +99,7 @@ function extractTags(place: GooglePlaceResult, category: Category): string[] {
   const area = place.formatted_address?.split(",")[1]?.trim();
   if (area && area.length < 20) tags.push(area);
 
-  return [...new Set(tags)].slice(0, 5);
+  return Array.from(new Set(tags)).slice(0, 5);
 }
 
 function placeToCard(place: GooglePlaceResult, category: Category): SwipeCard {
