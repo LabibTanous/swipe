@@ -43,9 +43,11 @@ export interface SwipeCard {
     label: string;
     value: string;
   };
+  image?: string;
   rating?: number;
   distance?: string;
-  imageEmoji?: string;
+  ai_summary?: string;
+  demand_indicator?: string;
 }
 
 // ─── App State ───────────────────────────────────────────────
