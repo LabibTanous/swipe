@@ -27,7 +27,6 @@ export default function SwipeDeck({ cards, onSave, onDone, onBack, title }: Prop
   const [showInfo, setShowInfo] = useState(false);
   const dragX = useMotionValue(0);
   const cardRotation = useTransform(dragX, [-DRAG_ROTATION_RANGE, DRAG_ROTATION_RANGE], [-MAX_ROTATION_DEG, MAX_ROTATION_DEG]);
-  const dragOffsetNorm = useTransform(dragX, [-DRAG_NORM_RANGE, DRAG_NORM_RANGE], [-1, 1]);
   const [dragOffsetVal, setDragOffsetVal] = useState(0);
   const isDragging = useRef(false);
 
