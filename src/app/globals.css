@@ -33,3 +33,12 @@ body { -webkit-font-smoothing: antialiased; }
 .anim-slide-up  { animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
 .anim-toast     { animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
 .anim-pulse     { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@keyframes swipeHint {
+  0%   { transform: translateX(0) rotate(0deg); }
+  20%  { transform: translateX(14px) rotate(1.2deg); }
+  45%  { transform: translateX(-8px) rotate(-0.7deg); }
+  70%  { transform: translateX(4px) rotate(0.3deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+.anim-swipe-hint { animation: swipeHint 0.9s cubic-bezier(0.16,1,0.3,1) 1.2s both; }

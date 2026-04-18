@@ -251,7 +251,11 @@ function Card({ card, onLike, onPass, onDragProgress, position }: {
           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${position === 0 ? "bg-[#ff6b35] text-white" : "bg-white/15 text-white/80"}`}>
             {position === 0 ? "⚡ TOP PICK" : "✓ GOOD MATCH"}
           </span>
-          {card.rating && <span className="text-[13px] text-white/60 font-medium">★ {card.rating}</span>}
+          {card.rating && (
+            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(255,200,0,0.18)", color: "rgba(255,215,60,0.95)" }}>
+              ★ {card.rating}
+            </span>
+          )}
         </div>
         <h3 className="text-white text-[28px] font-black tracking-tight leading-tight mb-1.5">{card.name}</h3>
         <div className="flex items-center gap-2 mb-3">
@@ -262,7 +266,7 @@ function Card({ card, onLike, onPass, onDragProgress, position }: {
           </>}
         </div>
         {card.ai_summary && (
-          <p className="text-[13px] text-white/60 leading-relaxed mb-3">{card.ai_summary}</p>
+          <p className="text-[13px] text-white/82 leading-relaxed mb-3" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{card.ai_summary}</p>
         )}
         <div className="flex flex-wrap gap-1.5">
           {card.tags.slice(0, 3).map(t => (
@@ -350,7 +354,7 @@ function ContactSheet({ card, onClose, sessionId }: { card: SwipeCard; onClose: 
               <span className="text-[18px]">📍</span> View on Map
             </button>
           )}
-          <button onClick={onClose} className="w-full py-4 rounded-2xl text-[14px] text-white/35 active:text-white/60 transition-colors">
+          <button onClick={onClose} className="w-full py-4 rounded-2xl text-[14px] text-white/52 active:text-white/75 transition-colors">
             Close
           </button>
         </div>
@@ -434,8 +438,10 @@ export default function App() {
         const cardsData = await cardsRes.json()
         setCards(cardsData.cards ?? [])
         setCardIdx(0)
-        const labels: Record<string, string> = { restaurants: "Restaurants", homes: "Homes", cars: "Cars", products: "Shopping", gyms: "Gyms", schools: "Schools", travel: "Travel", activities: "Activities", beauty: "Beauty", health: "Health" }
-        setTitle(categories.length === 1 ? (labels[categories[0]] || "Results") : "Top Matches")
+        const labels: Record<string, string> = { restaurants: "restaurants", homes: "homes", cars: "cars", products: "products", gyms: "gyms", schools: "schools", travel: "escapes", activities: "activities", beauty: "beauty spots", health: "clinics" }
+        const count = cardsData.cards?.length ?? 0
+        const noun = categories.length === 1 ? (labels[categories[0]] || "options") : "matches"
+        setTitle(count > 0 ? `Sami found ${count} ${noun}` : "Top Matches")
         setScreen("swipe")
       } else if (qs.length > 0) {
         setQuestions(qs); setCurrentQ(0); setAnswers([]); setScreen("questions")
@@ -550,7 +556,7 @@ export default function App() {
               </div>
             )}
 
-            <a href="/list-your-business" className="mt-8 text-[12px] text-white/18 hover:text-white/40 transition-colors">
+            <a href="/list-your-business" className="mt-8 text-[12px] text-white/32 hover:text-white/55 transition-colors">
               List your business →
             </a>
           </div>
@@ -605,7 +611,7 @@ export default function App() {
                         transition: "background 0.15s, border-color 0.15s, transform 0.1s",
                       }}>
                       <span>{opt}</span>
-                      <span className="text-white/30 text-lg">›</span>
+                      <span className="text-white/50 text-lg">›</span>
                     </button>
                   ))}
                 </div>
@@ -614,7 +620,7 @@ export default function App() {
               {questions[currentQ].allowText && (
                 <div>
                   {questions[currentQ].options && (
-                    <p className="text-[11px] text-white/22 text-center mb-3">— or type your own —</p>
+                    <p className="text-[11px] text-white/38 text-center mb-3">— or type your own —</p>
                   )}
                   <div className="flex gap-2">
                     <input value={freeText} onChange={e => setFreeText(e.target.value)}
@@ -670,7 +676,7 @@ export default function App() {
                 </div>
               ) : (
                 rem.slice(0, 3).map((card, i) => (
-                  <div key={card.id} className="absolute"
+                  <div key={card.id} className={`absolute${i === 0 && cardIdx === 0 ? " anim-swipe-hint" : ""}`}
                     style={{
                       top: i === 0 ? 0 : i * 8,
                       left: i === 0 ? 0 : i * 5,
@@ -771,10 +777,15 @@ export default function App() {
                     <p className="text-[14px] text-white/35">Swipe right on things you like</p>
                   </div>
                 : picks.map(item => (
-                  <div key={item.id} className="rounded-2xl p-4 flex items-center gap-3 border border-[#2c2c2e] active:scale-[0.98] transition-transform"
+                  <div key={item.id} className="rounded-2xl p-3.5 flex items-center gap-3 border border-[#2c2c2e] active:scale-[0.98] transition-transform"
                     style={{ background: "rgba(255,255,255,0.05)" }}>
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-                      style={{ background: item.bgColor || "#2a2a2a" }}>{item.emoji}</div>
+                    <div className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden relative"
+                      style={{ background: item.bgColor || "#2a2a2a" }}>
+                      {item.image
+                        ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+                        : <span className="absolute inset-0 flex items-center justify-center text-2xl">{item.emoji}</span>
+                      }
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-[14px] text-white truncate">{item.name}</p>
                       <p className="text-[12px] text-white/40 mt-0.5">{item.price}</p>
