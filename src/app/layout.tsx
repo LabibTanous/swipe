@@ -9,17 +9,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#1d1d1f",
+  themeColor: "#07070F",
 };
 
 export const metadata: Metadata = {
-  title: "Swipe — AI Concierge Dubai",
-  description: "Find the best restaurants, homes, cars, gyms and more in Dubai. Just ask.",
+  title: "Verdict — Dubai Property Intelligence",
+  description: "AI-powered property decisions for Dubai. Scored, sourced, and sharp.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Swipe",
+    title: "Verdict",
   },
   icons: {
     apple: "/icon-192.svg",
