@@ -1,5 +1,5 @@
 -- ============================================================
--- SWIPE DUBAI — Property Marketplace Schema
+-- VERDICT — Property Marketplace Schema
 -- Run this in: Supabase Dashboard → SQL Editor → New Query
 -- ============================================================
 
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS buyer_profiles (
 
 -- ──────────────────────────────────────────────────────────
 -- 4. PROPERTY LISTINGS (named property_listings to avoid
---    conflict with the existing generic swipe cards table)
+--    conflict with the existing generic cards table)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS property_listings (
   id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

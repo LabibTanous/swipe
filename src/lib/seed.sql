@@ -1,5 +1,5 @@
 -- ============================================================
--- SWIPE DUBAI — Seed Data
+-- VERDICT — Seed Data
 -- Run in: Supabase Dashboard → SQL Editor → New Query
 -- Requires: schema.sql already applied
 -- ============================================================
@@ -12,21 +12,21 @@ INSERT INTO auth.users (
   id, email, encrypted_password, email_confirmed_at,
   created_at, updated_at, aud, role
 ) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'admin@swipedubai.test',
+  ('00000000-0000-0000-0000-000000000001', 'admin@verdict.test',
    crypt('AdminTest123!', gen_salt('bf')), NOW(), NOW(), NOW(), 'authenticated', 'authenticated'),
-  ('00000000-0000-0000-0000-000000000002', 'broker1@swipedubai.test',
+  ('00000000-0000-0000-0000-000000000002', 'broker1@verdict.test',
    crypt('BrokerTest123!', gen_salt('bf')), NOW(), NOW(), NOW(), 'authenticated', 'authenticated'),
-  ('00000000-0000-0000-0000-000000000003', 'broker2@swipedubai.test',
+  ('00000000-0000-0000-0000-000000000003', 'broker2@verdict.test',
    crypt('BrokerTest123!', gen_salt('bf')), NOW(), NOW(), NOW(), 'authenticated', 'authenticated'),
-  ('00000000-0000-0000-0000-000000000004', 'buyer1@swipedubai.test',
+  ('00000000-0000-0000-0000-000000000004', 'buyer1@verdict.test',
    crypt('BuyerTest123!', gen_salt('bf')), NOW(), NOW(), NOW(), 'authenticated', 'authenticated')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, role, full_name, email) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'admin',  'Swipe Admin',    'admin@swipedubai.test'),
-  ('00000000-0000-0000-0000-000000000002', 'broker', 'Ahmed Al Rashid','broker1@swipedubai.test'),
-  ('00000000-0000-0000-0000-000000000003', 'broker', 'Sara Khalil',    'broker2@swipedubai.test'),
-  ('00000000-0000-0000-0000-000000000004', 'user',   'Test Buyer',     'buyer1@swipedubai.test')
+  ('00000000-0000-0000-0000-000000000001', 'admin',  'Verdict Admin',    'admin@verdict.test'),
+  ('00000000-0000-0000-0000-000000000002', 'broker', 'Ahmed Al Rashid','broker1@verdict.test'),
+  ('00000000-0000-0000-0000-000000000003', 'broker', 'Sara Khalil',    'broker2@verdict.test'),
+  ('00000000-0000-0000-0000-000000000004', 'user',   'Test Buyer',     'buyer1@verdict.test')
 ON CONFLICT (id) DO NOTHING;
 
 -- Wallets: 500 AED = 50000 fils each broker
