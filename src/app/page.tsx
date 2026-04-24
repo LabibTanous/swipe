@@ -1,5 +1,6 @@
 "use client"
 import { useState, useRef, useEffect, useCallback } from "react"
+import { createClient } from "@supabase/supabase-js"
 
 // ── Design tokens ──────────────────────────────────────────────
 const V = {
@@ -26,6 +27,12 @@ const V = {
   fontMono:  '"SF Mono", ui-monospace, Menlo, Consolas, monospace',
 }
 
+const SUPA_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
+const SUPA_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
+const getSupabase = () => createClient(SUPA_URL, SUPA_ANON)
+
+type Session = { access_token: string; user: { id: string; email?: string } }
+
 // ── Types ──────────────────────────────────────────────────────
 interface Property {
   id: string; name: string; area: string; developer: string
@@ -39,9 +46,11 @@ interface Property {
 interface Profile {
   intent?: "buy" | "rent" | "invest"
   propertyType?: string; budget?: number
+  category?: "residential" | "commercial"
+  downpaymentPercent?: number; paymentPlanCapacity?: number
   timeline?: string; financeType?: string; area?: string
 }
-type Screen = "onboarding" | "qualify" | "thinking" | "swipe" | "list" | "saved"
+type Screen = "onboarding" | "home" | "qualify" | "thinking" | "swipe" | "list" | "saved"
 
 // ── Property data ──────────────────────────────────────────────
 const PROPERTIES: Property[] = [
@@ -148,6 +157,92 @@ function filterProperties(profile: Profile): Property[] {
   return props.sort((a, b) => b.score - a.score)
 }
 
+// ── API listing mapper (for live Supabase data) ───────────────
+interface ApiListing {
+  id: string; title: string; listing_type: string
+  price: number; price_per_sqft?: number; area_name?: string
+  developer_name?: string; roi_projection?: number
+  payment_plan_details?: { handover?: string; plan?: string }
+  is_ready?: boolean; match_score: number; reasoning: string
+}
+
+const AREA_AVG_PSF: Record<string, number> = {
+  "JVC": 950, "Business Bay": 1800, "Dubai South": 700,
+  "Arjan": 850, "Dubai Hills": 1600, "Dubai Marina": 2000,
+  "Palm Jumeirah": 3500, "Downtown Dubai": 2200, "Creek Harbour": 1500,
+  "Emaar South": 650, "JLT": 1400, "DIFC": 2800,
+}
+
+function mapListingsToProperties(listings: ApiListing[]): Property[] {
+  return listings.map(l => {
+    const area = l.area_name ?? "Dubai"
+    const psf  = l.price_per_sqft ?? 0
+    const avg  = AREA_AVG_PSF[area] ?? psf
+    const roi  = l.roi_projection ?? 0
+    const s    = Math.min(100, Math.max(0, l.match_score))
+    const belowPct = avg > 0 && psf > 0 ? Math.round((1 - psf / avg) * 100) : 0
+    const positive: string[] = []
+    if (belowPct > 0) positive.push(`${belowPct}% below ${area} avg psf`)
+    if (roi > 0) positive.push(`${(roi * 100).toFixed(1)}% projected ROI`)
+    if (l.is_ready) positive.push("Ready to move in")
+    return {
+      id: l.id, name: l.title, area,
+      developer: l.developer_name ?? "Independent",
+      transaction: (l.listing_type === "off-plan" ? "offplan" : l.listing_type) as "buy" | "rent" | "offplan",
+      bedrooms: "—", size: 0,
+      price: l.price, psf, areaPsf: avg,
+      score: s,
+      scoreLabel: s >= 90 ? "Perfect Match" : s >= 75 ? "Strong Match" : "Good Match",
+      scores: {
+        developer: Math.round(Math.min(25, s * 0.25)),
+        layout:    Math.round(Math.min(20, s * 0.18)),
+        location:  Math.round(Math.min(20, s * 0.18)),
+        price:     Math.round(Math.min(25, s * 0.25)),
+        market:    Math.round(Math.min(10, s * 0.10)),
+      },
+      verdict: l.reasoning, positive, risk: [],
+      imgBg: `linear-gradient(135deg, ${areaTint(area.toLowerCase())})`,
+      handover: l.payment_plan_details?.handover,
+      paymentPlan: l.payment_plan_details?.plan,
+    }
+  })
+}
+
+function calculateQualificationScore(profile: Profile): { score: number; tier: "Gold" | "Silver" | "Bronze" } {
+  let score = 50
+  if (profile.timeline === "ready") score += 25
+  else if (profile.timeline === "soon") score += 10
+  if (profile.financeType === "cash" || profile.financeType === "1chq") score += 20
+  else if (profile.financeType === "mortgage") score += 8
+  else score += 4
+  const budget = profile.budget ?? 0
+  const intent = profile.intent ?? "buy"
+  if (intent === "buy" || intent === "invest") {
+    if (budget >= 5_000_000) score += 5
+    else if (budget >= 2_000_000) score += 3
+  } else {
+    if (budget >= 200_000) score += 5
+    else if (budget >= 100_000) score += 3
+  }
+  score = Math.min(100, score)
+  const tier: "Gold" | "Silver" | "Bronze" = score >= 85 ? "Gold" : score >= 65 ? "Silver" : "Bronze"
+  return { score, tier }
+}
+
+function areaTint(v: string): string {
+  const map: Record<string, string> = {
+    downtown:        "#1a0e14, #3a1a22 60%, #5e2e3a",
+    "business bay":  "#2a1f0a, #4a3a1a 60%, #6e5420",
+    "business-bay":  "#2a1f0a, #4a3a1a 60%, #6e5420",
+    marina:          "#0a1a28, #1a3550 60%, #305a82",
+    jvc:             "#1a2010, #2e3a1e 60%, #4a5a2e",
+    creek:           "#0c2030, #1a3a55 60%, #2e628a",
+    hills:           "#1c1a12, #3a362a 60%, #5c5544",
+    expo:            "#1a1a2a, #2a2e4a 60%, #3e4a6e",
+  }
+  return map[v] || "#1a1a1e, #2a2a30"
+}
+
 // ── Icons ──────────────────────────────────────────────────────
 const IconBuy = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -214,6 +309,26 @@ const IconCards = () => (
 const IconMixed = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3V21M5 7L12 3L19 7M5 17L12 21L19 17"/>
+  </svg>
+)
+const IconOffice = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="17" rx="1"/>
+    <path d="M3 9H21"/><path d="M8 9V4"/><path d="M16 9V4"/>
+    <path d="M7 13H9M7 17H9M11 13H13M11 17H13M15 13H17M15 17H17"/>
+  </svg>
+)
+const IconWarehouse = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 8L12 3L22 8V21H2V8Z"/>
+    <rect x="8" y="14" width="8" height="7"/>
+    <path d="M8 14H16"/>
+  </svg>
+)
+const IconRetail = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3H5L6.68 12.39C6.77 12.83 7.15 13.16 7.6 13.16H17.4C17.85 13.16 18.23 12.83 18.32 12.39L20 4H5"/>
+    <circle cx="8.5" cy="19.5" r="1.5"/><circle cx="17.5" cy="19.5" r="1.5"/>
   </svg>
 )
 
@@ -480,10 +595,33 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
 }
 
 // ── 2. QUALIFY FLOW ────────────────────────────────────────────
-const INTENT_RANGES = {
-  buy:    { min:800_000,  max:15_000_000, default:1_600_000 },
-  rent:   { min:40_000,   max:450_000,    default:120_000 },
-  invest: { min:400_000,  max:10_000_000, default:1_200_000 },
+function rangeToArea(v: number, intent: string): string {
+  if (intent === "rent") {
+    if (v < 70_000)  return "JVC · Sports City · Silicon Oasis"
+    if (v < 130_000) return "JLT · Business Bay · Barsha"
+    if (v < 220_000) return "Marina · Downtown · Creek"
+    return "DIFC · Dubai Hills · Palm"
+  }
+  if (intent === "invest") {
+    if (v < 800_000)   return "Studios in JLT, JVC, Expo City"
+    if (v < 1_500_000) return "Business Bay · Creek · JLT"
+    if (v < 3_000_000) return "Downtown · Marina · MBR City"
+    return "DIFC · Palm · Dubai Hills"
+  }
+  if (v < 1_500_000) return "Studio to 1BR in JVC, JLT, Sports City"
+  if (v < 2_500_000) return "1–2BR in Business Bay, Marina, JLT"
+  if (v < 5_000_000) return "2–3BR in Downtown, DIFC, Dubai Hills"
+  return "Premium · Palm, One Za'abeel, DIFC"
+}
+
+const INTENT_RANGES: Record<string, {
+  min: number; max: number; default: number
+  realistic: (v: number) => [number, number]
+  areaHint: (v: number) => string
+}> = {
+  buy:    { min:800_000,  max:15_000_000, default:1_600_000, realistic:(v)=>[Math.round(v*0.85/50_000)*50_000, Math.round(v*1.15/50_000)*50_000], areaHint:(v)=>rangeToArea(v,"buy") },
+  rent:   { min:40_000,   max:450_000,    default:120_000,   realistic:(v)=>[Math.round(v*0.85/5_000)*5_000,   Math.round(v*1.15/5_000)*5_000],   areaHint:(v)=>rangeToArea(v,"rent") },
+  invest: { min:400_000,  max:10_000_000, default:1_200_000, realistic:(v)=>[Math.round(v*0.90/50_000)*50_000, Math.round(v*1.25/50_000)*50_000], areaHint:(v)=>rangeToArea(v,"invest") },
 }
 
 function formatAED(n: number) {
@@ -586,6 +724,16 @@ function BudgetStep({ intent, onAdvance }: { intent: "buy" | "rent" | "invest"; 
     if (committed) setCommitted(false)
   }
 
+  function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value.replace(/[^\d.]/g, "")
+    const v = Number(raw) * (raw.includes(".") && Number(raw) < 100 ? 1_000_000 : 1)
+    setText(e.target.value)
+    if (!isNaN(v) && v >= cfg.min && v <= cfg.max) {
+      setValue(v)
+      if (committed) setCommitted(false)
+    }
+  }
+
   const quicks = intent === "rent"
     ? [80_000, 120_000, 180_000, 260_000]
     : intent === "invest"
@@ -593,6 +741,8 @@ function BudgetStep({ intent, onAdvance }: { intent: "buy" | "rent" | "invest"; 
       : [1_500_000, 2_500_000, 4_000_000, 7_500_000]
 
   const pct = ((value - cfg.min) / (cfg.max - cfg.min)) * 100
+  const [realisticLo, realisticHi] = cfg.realistic(value)
+  const areaHint = cfg.areaHint(value)
 
   return (
     <>
@@ -600,7 +750,13 @@ function BudgetStep({ intent, onAdvance }: { intent: "buy" | "rent" | "invest"; 
         <div style={{ fontSize:10, fontWeight:600, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(240,239,232,0.38)", marginBottom:6 }}>
           {intent === "rent" ? "ANNUAL BUDGET" : intent === "invest" ? "CAPITAL AVAILABLE" : "READY TO SPEND"}
         </div>
-        <div style={{ fontFamily:V.fontMono, fontSize:38, fontWeight:700, letterSpacing:"-0.03em", color:V.gold }}>{text}</div>
+        <input
+          type="text"
+          value={text}
+          onChange={handleInput}
+          onBlur={() => syncText(value)}
+          style={{ width:"100%", border:"none", background:"transparent", padding:0, outline:"none", fontFamily:V.fontMono, fontSize:38, fontWeight:700, letterSpacing:"-0.03em", color:V.gold }}
+        />
         {intent === "rent" && (
           <div style={{ marginTop:2, fontSize:12, color:"rgba(240,239,232,0.4)" }}>
             per year · approx. {formatAED(Math.round(value / 12 / 1000) * 1000)}/mo
@@ -646,9 +802,19 @@ function BudgetStep({ intent, onAdvance }: { intent: "buy" | "rent" | "invest"; 
             <span className="anim-gold-pulse" style={{ width:8, height:8, borderRadius:999, background:V.gold, boxShadow:"0 0 10px rgba(201,168,76,0.6)" }} />
             <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(201,168,76,0.75)" }}>VERDICT · AI READ</span>
           </div>
-          <p style={{ fontSize:17, fontStyle:"italic", fontWeight:500, color:V.goldLight, lineHeight:1.35, margin:"0 0 12px" }}>
-            "Based on {formatAED(value)}, your realistic range unlocks {intent === "rent" ? "mid-tier waterfront rentals" : "strong-yield opportunities"} in Dubai."
+          <p style={{ fontSize:17, fontStyle:"italic", fontWeight:500, color:V.goldLight, lineHeight:1.35, margin:"0 0 12px", letterSpacing:"-0.005em" }}>
+            "Based on {formatAED(value)}, your realistic range is{" "}
+            <span style={{ fontStyle:"normal", fontFamily:V.fontMono, fontWeight:700, color:V.gold }}>
+              {formatAED(realisticLo)}–{formatAED(realisticHi)}
+            </span>
+            {intent === "rent" ? " / yr" : ""}."
           </p>
+          <div style={{ display:"flex", gap:10, padding:"10px 12px", borderRadius:12, background:"rgba(0,0,0,0.25)", border:"1px solid rgba(201,168,76,0.12)" }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.25em", textTransform:"uppercase", color:"rgba(240,239,232,0.35)", marginBottom:3 }}>TYPICAL FIT</div>
+              <div style={{ fontSize:12, fontWeight:500, lineHeight:1.4, color:"rgba(240,239,232,0.8)" }}>{areaHint}</div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -665,6 +831,74 @@ function BudgetStep({ intent, onAdvance }: { intent: "buy" | "rent" | "invest"; 
         onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
         onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}>
         {committed ? "Continue" : "See my realistic range"}
+      </button>
+    </>
+  )
+}
+
+// ── Off-Plan: Payment Plan Capacity step ──────────────────
+function PaymentPlanStep({ budget, onAdvance }: {
+  budget: number
+  onAdvance: (v: { downpaymentPercent: number; paymentPlanCapacity: number }) => void
+}) {
+  const [dpPct, setDpPct] = useState(20)
+  const [monthly, setMonthly] = useState(10_000)
+  const dpAmount = Math.round(budget * (dpPct / 100))
+  const MONTHLY_MIN = 3_000
+  const MONTHLY_MAX = 50_000
+  const pct = ((monthly - MONTHLY_MIN) / (MONTHLY_MAX - MONTHLY_MIN)) * 100
+
+  return (
+    <>
+      <div style={{ margin:"4px 0 18px", padding:"20px", borderRadius:22, background:V.card, border:`1px solid ${V.border}` }}>
+        <div style={{ fontSize:10, fontWeight:600, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(240,239,232,0.38)", marginBottom:12 }}>DOWNPAYMENT</div>
+        <div style={{ display:"flex", gap:8, marginBottom:8 }}>
+          {[10, 20, 30, 40].map(p => (
+            <button key={p} onClick={() => setDpPct(p)} style={{
+              flex:1, padding:"12px 6px", borderRadius:12,
+              border:`1px solid ${dpPct === p ? "rgba(201,168,76,0.45)" : V.border}`,
+              background: dpPct === p ? V.goldDim : "rgba(255,255,255,0.02)",
+              color: dpPct === p ? V.gold : "rgba(240,239,232,0.7)",
+              fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:V.fontMono,
+            }}>{p}%</button>
+          ))}
+        </div>
+        <div style={{ fontSize:12, color:"rgba(240,239,232,0.4)", marginTop:4, fontFamily:V.fontMono }}>
+          = {formatAED(dpAmount)} upfront
+        </div>
+      </div>
+
+      <div style={{ margin:"0 0 18px", padding:"20px", borderRadius:22, background:V.card, border:`1px solid ${V.border}` }}>
+        <div style={{ fontSize:10, fontWeight:600, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(240,239,232,0.38)", marginBottom:8 }}>MONTHLY PAYMENT CAPACITY</div>
+        <div style={{ fontFamily:V.fontMono, fontSize:32, fontWeight:700, letterSpacing:"-0.03em", color:V.gold, marginBottom:16 }}>
+          {formatAED(monthly)}<span style={{ fontSize:14, fontWeight:500, color:"rgba(240,239,232,0.4)" }}>/mo</span>
+        </div>
+        <div style={{ position:"relative", height:28, display:"flex", alignItems:"center" }}>
+          <div style={{ position:"absolute", left:0, right:0, height:4, borderRadius:999, background:"rgba(255,255,255,0.08)" }} />
+          <div style={{ position:"absolute", left:0, width:`${pct}%`, height:4, borderRadius:999, background:V.progGrad, transition:"width 0.1s linear" }} />
+          <input type="range" min={MONTHLY_MIN} max={MONTHLY_MAX} step={1_000} value={monthly}
+            onChange={e => setMonthly(Number(e.target.value))} className="q-slider"
+            style={{ WebkitAppearance:"none", appearance:"none", position:"absolute", left:0, right:0, width:"100%", height:28, background:"transparent", cursor:"pointer", zIndex:2, outline:"none" }}
+          />
+        </div>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10.5, fontWeight:500, color:"rgba(240,239,232,0.3)", fontFamily:V.fontMono }}>
+          <span>AED 3K</span><span>AED 50K</span>
+        </div>
+      </div>
+
+      <div style={{ flex:1, minHeight:16 }} />
+      <button onClick={() => onAdvance({ downpaymentPercent: dpPct, paymentPlanCapacity: monthly })}
+        style={{
+          marginTop:24, width:"100%", padding:"17px 20px", borderRadius:16, border:"none",
+          background:V.ctaGrad, color:"#07070F",
+          fontSize:16, fontWeight:700, letterSpacing:"-0.01em", cursor:"pointer",
+          boxShadow:"0 10px 24px rgba(201,168,76,0.22)",
+          transition:`transform 0.18s ${V.easeApple}`,
+        }}
+        onMouseDown={e => (e.currentTarget.style.transform = "scale(0.98)")}
+        onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+        onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}>
+        Find off-plan zones
       </button>
     </>
   )
@@ -730,10 +964,26 @@ function QualifyFlow({ onDone, onBack }: { onDone: (profile: Profile) => void; o
         {step === 2 && (
           <>
             <QHeader eyebrow="PROPERTY TYPE" title="What type of property?"
-              context={intent === "invest" ? "Type drives yield profile and tenant demand." : "Each has a different spec, cost, and paperwork."} />
-            <BigOption icon={<IconApt />} label="Apartment" sub="Studio to 4BR · towers & mid-rise" delay={40} onClick={() => advance({ propertyType:"apartment" })} />
-            <BigOption icon={<IconVilla />} label="Villa" sub="Standalone · 3–7BR · private plot" delay={120} onClick={() => advance({ propertyType:"villa" })} />
-            <BigOption icon={<IconTown />} label="Townhouse" sub="Semi-detached · community living" delay={200} onClick={() => advance({ propertyType:"townhouse" })} />
+              context={intent === "invest" ? "Type drives yield profile and tenant demand."
+                : intent === "rent" ? "Residential or commercial — different RERA rules apply."
+                : "Each has a different spec, cost, and paperwork."} />
+            <BigOption icon={<IconApt />} label="Apartment" sub="Studio to 4BR · towers & mid-rise" delay={40}
+              onClick={() => advance({ propertyType:"apartment", category:"residential" })} />
+            <BigOption icon={<IconVilla />} label="Villa" sub="Standalone · 3–7BR · private plot" delay={120}
+              onClick={() => advance({ propertyType:"villa", category:"residential" })} />
+            <BigOption icon={<IconTown />} label="Townhouse" sub="Semi-detached · community living" delay={200}
+              onClick={() => advance({ propertyType:"townhouse", category:"residential" })} />
+            {intent === "rent" && (
+              <>
+                <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(240,239,232,0.25)", margin:"10px 0 6px", paddingLeft:2 }}>COMMERCIAL</div>
+                <BigOption icon={<IconOffice />} label="Office" sub="Open plan · serviced · fitted units" delay={280}
+                  onClick={() => advance({ propertyType:"office", category:"commercial" })} />
+                <BigOption icon={<IconWarehouse />} label="Warehouse" sub="Al Quoz · Dubai South · JAFZA" delay={360}
+                  onClick={() => advance({ propertyType:"warehouse", category:"commercial" })} />
+                <BigOption icon={<IconRetail />} label="Retail" sub="Mall · strip · high street units" delay={440}
+                  onClick={() => advance({ propertyType:"retail", category:"commercial" })} />
+              </>
+            )}
           </>
         )}
 
@@ -776,11 +1026,20 @@ function QualifyFlow({ onDone, onBack }: { onDone: (profile: Profile) => void; o
           </>
         )}
 
-        {step === 6 && (
+        {step === 6 && intent === "invest" && (
+          <>
+            <QHeader eyebrow="PAYMENT PLAN"
+              title={"Structure your\noff-plan entry."}
+              context="We'll match zones where your cashflow qualifies." />
+            <PaymentPlanStep budget={profile.budget ?? 1_200_000} onAdvance={advance} />
+          </>
+        )}
+
+        {step === 6 && intent !== "invest" && (
           <>
             <QHeader eyebrow="PREFERRED AREAS"
               title={"Which areas\nare you drawn to?"}
-              context={intent === "invest" ? "Avg gross yield shown per area." : "Pick one — we'll score the best matches."} />
+              context="Pick one — we'll score the best matches." />
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {AREAS.map((a, i) => (
                 <button key={a.v} onClick={() => advance({ area:a.v })}
@@ -796,7 +1055,7 @@ function QualifyFlow({ onDone, onBack }: { onDone: (profile: Profile) => void; o
                   onMouseDown={e => (e.currentTarget.style.transform = "scale(0.98)")}
                   onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
                   onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}>
-                  <div style={{ width:"100%", height:52, borderRadius:12, background:"rgba(255,255,255,0.05)", marginBottom:12, border:"1px solid rgba(255,255,255,0.04)" }} />
+                  <div style={{ width:"100%", height:52, borderRadius:12, background:`linear-gradient(135deg, ${areaTint(a.v)})`, marginBottom:12, border:"1px solid rgba(255,255,255,0.04)" }} />
                   <div style={{ fontSize:14, fontWeight:600, color:"#fff", letterSpacing:"-0.01em", marginBottom:4 }}>{a.label}</div>
                   {a.yield && <span style={{ fontSize:11, fontWeight:700, color:V.green, fontFamily:V.fontMono }}>{a.yield} yield</span>}
                   {a.note && !a.yield && <span style={{ fontSize:11, color:"rgba(240,239,232,0.5)" }}>{a.note}</span>}
@@ -811,7 +1070,7 @@ function QualifyFlow({ onDone, onBack }: { onDone: (profile: Profile) => void; o
 }
 
 // ── 3. THINKING ────────────────────────────────────────────────
-function ThinkingScreen({ profile, onDone }: { profile: Profile; onDone: () => void }) {
+function ThinkingScreen({ profile, onDone }: { profile: Profile; onDone: (props: Property[]) => void }) {
   const lines = profile.intent === "invest" ? [
     "Running yield calculations…",
     "Checking developer delivery records…",
@@ -831,9 +1090,39 @@ function ThinkingScreen({ profile, onDone }: { profile: Profile; onDone: () => v
   useEffect(() => {
     const ti = setInterval(() => setIdx(i => Math.min(i + 1, lines.length - 1)), 700)
     const tp = setInterval(() => setProgress(p => Math.min(p + 2, 100)), 60)
-    const done = setTimeout(onDone, 3400)
-    return () => { clearInterval(ti); clearInterval(tp); clearTimeout(done) }
-  }, [])
+
+    async function fetchAndDone() {
+      let props: Property[] = []
+      try {
+        const res = await fetch("/api/match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            purpose: profile.intent === "invest" ? "off-plan" : profile.intent ?? "buy",
+            category: profile.category ?? "residential",
+            budget: profile.budget ?? 2_000_000,
+            subType: profile.propertyType,
+            downpaymentPercent: profile.downpaymentPercent ?? 20,
+            monthlyCapacity: profile.paymentPlanCapacity ?? 10_000,
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const listings: ApiListing[] = data.listings ?? []
+          if (listings.length > 0) props = mapListingsToProperties(listings)
+        }
+      } catch (_) { /* fall through to static data */ }
+
+      if (props.length === 0) props = filterProperties(profile)
+      await new Promise(r => setTimeout(r, 3200))
+      clearInterval(ti); clearInterval(tp)
+      setProgress(100)
+      setTimeout(() => onDone(props), 150)
+    }
+
+    fetchAndDone()
+    return () => { clearInterval(ti); clearInterval(tp) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -1056,8 +1345,9 @@ function SwipeResults({ properties, onSave, onComplete, saved }: {
 }
 
 // ── 5. DETAIL SHEET ────────────────────────────────────────────
-function DetailSheet({ prop, saved, onSave, onClose }: {
+function DetailSheet({ prop, saved, onSave, onClose, onContact, contacted }: {
   prop: Property; saved: boolean; onSave: () => void; onClose: () => void
+  onContact?: () => void; contacted?: boolean
 }) {
   return (
     <div className="anim-phase-in" style={{
@@ -1152,11 +1442,20 @@ function DetailSheet({ prop, saved, onSave, onClose }: {
 
       <div style={{ position:"absolute", bottom:0, left:0, right:0, padding:"14px 20px 28px", background:"linear-gradient(to top, #07070F 60%, rgba(7,7,15,0.8) 85%, transparent)", display:"flex", gap:10 }}>
         <button onClick={onSave} disabled={saved} style={{
-          flex:1, padding:16, borderRadius:14, border:"none",
-          background: saved ? "rgba(201,168,76,0.15)" : V.ctaGrad,
-          color: saved ? V.gold : "#07070F",
-          fontSize:14, fontWeight:700, cursor: saved ? "default" : "pointer", letterSpacing:"-0.01em",
-        }}>{saved ? "★ Saved to briefings" : "★ Save to briefings"}</button>
+          flex:1, padding:16, borderRadius:14,
+          border: saved ? "none" : "1px solid rgba(255,255,255,0.1)",
+          background: saved ? "rgba(201,168,76,0.12)" : "rgba(255,255,255,0.04)",
+          color: saved ? V.gold : "rgba(240,239,232,0.7)",
+          fontSize:14, fontWeight:700, cursor: saved ? "default" : "pointer",
+        }}>{saved ? "★ Saved" : "★ Save"}</button>
+        {onContact && (
+          <button onClick={contacted ? undefined : onContact} style={{
+            flex:2, padding:16, borderRadius:14, border:"none",
+            background: contacted ? "rgba(52,199,123,0.15)" : V.ctaGrad,
+            color: contacted ? V.green : "#07070F",
+            fontSize:14, fontWeight:700, cursor: contacted ? "default" : "pointer", letterSpacing:"-0.01em",
+          }}>{contacted ? "✓ Agent notified" : "Contact Agent"}</button>
+        )}
       </div>
     </div>
   )
@@ -1256,33 +1555,199 @@ function SavedScreen({ saved, onOpen, onBack }: {
     <div style={{ display:"flex", flexDirection:"column", height:"100%", background:V.bg }}>
       <div style={{ padding:"14px 20px 10px", flexShrink:0, display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={onBack} style={{ width:36, height:36, borderRadius:999, border:"none", background:"rgba(255,255,255,0.05)", color:"rgba(240,239,232,0.5)", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
-        <div>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(201,168,76,0.7)", marginBottom:4 }}>MY BRIEFINGS</div>
-          <div style={{ fontSize:20, fontWeight:700, color:"#fff", letterSpacing:"-0.01em" }}>{saved.length} saved</div>
-        </div>
+        <div style={{ flex:1 }} />
       </div>
 
-      <div style={{ flex:1, overflowY:"auto", padding:"8px 20px 32px" }}>
-        {saved.length === 0 ? (
-          <div style={{ textAlign:"center", padding:"60px 0", color:"rgba(240,239,232,0.3)", fontSize:14 }}>
-            <div style={{ fontSize:36, marginBottom:12 }}>★</div>
-            Save properties from the swipe view to build your briefing.
+      <div style={{ padding:"4px 20px 12px", flexShrink:0 }}>
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(201,168,76,0.7)", marginBottom:6 }}>YOUR BRIEFINGS</div>
+        <h1 style={{ fontSize:28, fontWeight:700, color:"#fff", letterSpacing:"-0.02em", margin:0, lineHeight:1.05 }}>
+          {saved.length} {saved.length === 1 ? "property" : "properties"}<br/>saved.
+        </h1>
+        <p style={{ fontSize:13, color:"rgba(240,239,232,0.45)", margin:"8px 0 0", maxWidth:300 }}>
+          Open any briefing to share with an agent — vetted, sourced, ready.
+        </p>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:"12px 20px 24px" }}>
+        {saved.length === 0 && (
+          <div style={{ marginTop:40, padding:24, borderRadius:20, background:V.card, border:`1px dashed ${V.border}`, textAlign:"center" }}>
+            <div style={{ fontSize:28, marginBottom:8, color:"rgba(240,239,232,0.38)" }}>★</div>
+            <div style={{ fontSize:14, fontWeight:600, color:"#fff", marginBottom:4 }}>No saved briefings yet</div>
+            <div style={{ fontSize:12, color:"rgba(240,239,232,0.45)" }}>Swipe right on any result to save it here.</div>
           </div>
-        ) : saved.map((p, i) => (
+        )}
+        {saved.map((p, i) => (
           <button key={p.id} onClick={() => onOpen(p)} className="anim-fade-up"
-            style={{ animationDelay:`${i * 60}ms`, width:"100%", marginBottom:10, padding:0, border:"none", background:"transparent", cursor:"pointer", textAlign:"left", borderRadius:18, overflow:"hidden", display:"block" }}>
-            <div style={{ display:"flex", gap:12, alignItems:"center", padding:"12px 14px", borderRadius:18, background:V.card, border:`1px solid ${V.border}` }}>
-              <div style={{ width:56, height:56, borderRadius:12, overflow:"hidden", flexShrink:0 }}>
-                <PropertyHero prop={p} height={56} compact minimal />
+            style={{ animationDelay:`${i * 60}ms`, width:"100%", marginBottom:12, padding:0, border:"none", background:"transparent", cursor:"pointer", textAlign:"left", borderRadius:20, overflow:"hidden", display:"block" }}>
+            <div style={{ borderRadius:20, overflow:"hidden", background:V.card, border:`1px solid ${V.border}` }}>
+              <PropertyHero prop={p} height={140} minimal />
+              <div style={{ padding:"14px 16px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:8 }}>
+                  <div>
+                    <div style={{ fontSize:15, fontWeight:700, color:"#fff", letterSpacing:"-0.01em" }}>{p.name}</div>
+                    <div style={{ fontSize:11, color:"rgba(240,239,232,0.45)", marginTop:2 }}>{p.area} · {p.developer}</div>
+                  </div>
+                  <ScoreChip score={p.score} />
+                </div>
+                <p style={{ fontSize:12, fontStyle:"italic", color:V.goldLight, margin:0, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" } as React.CSSProperties}>"{p.verdict}"</p>
               </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:15, fontWeight:600, color:"#fff", letterSpacing:"-0.01em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
-                <div style={{ fontSize:11, color:"rgba(240,239,232,0.4)", marginTop:2 }}>{p.area} · {p.transaction === "rent" ? fmtRentYr(p.price) : fmtAED(p.price)}</div>
-              </div>
-              <ScoreChip score={p.score} />
             </div>
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── 8. HOME (returning users) ──────────────────────────────────
+function HomeScreen({ saved, onStartNew, onOpenSaved, onOpen }: {
+  saved: Property[]; onStartNew: () => void; onOpenSaved: () => void; onOpen: (p: Property) => void
+}) {
+  const topPick = saved[0]
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:V.bg, overflowY:"auto" }}>
+      <div style={{ padding:"18px 20px 20px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:28 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:"linear-gradient(135deg, #8A6A2A, #C9A84C)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:900, color:"#07070F" }}>V</div>
+            <span style={{ fontSize:10, letterSpacing:"0.3em", fontWeight:600, color:"rgba(201,168,76,0.7)", textTransform:"uppercase" }}>VERDICT</span>
+          </div>
+          <button onClick={onOpenSaved} style={{
+            padding:"8px 13px", borderRadius:999,
+            background: saved.length > 0 ? V.goldDim : "rgba(255,255,255,0.05)",
+            border:`1px solid ${saved.length > 0 ? "rgba(201,168,76,0.3)" : "rgba(255,255,255,0.06)"}`,
+            color: saved.length > 0 ? V.gold : "rgba(240,239,232,0.6)",
+            fontSize:12, fontWeight:600, cursor:"pointer",
+          }}>★ {saved.length} saved</button>
+        </div>
+
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(240,239,232,0.4)", marginBottom:8 }}>WELCOME BACK</div>
+        <h1 style={{ fontSize:32, fontWeight:700, color:"#fff", letterSpacing:"-0.025em", margin:"0 0 8px", lineHeight:1.05 }}>Your market,<br/>this week.</h1>
+        <p style={{ fontSize:14, color:"rgba(240,239,232,0.5)", margin:"0 0 24px", lineHeight:1.45, maxWidth:320 }}>
+          {saved.length > 0 ? `${saved.length} saved ${saved.length === 1 ? "property" : "properties"} in your briefings.` : "Start a brief to get AI-ranked results."}
+        </p>
+
+        {topPick && (
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.25em", textTransform:"uppercase", color:"rgba(201,168,76,0.7)", marginBottom:10 }}>★ TOP PICK</div>
+            <button onClick={() => onOpen(topPick)} style={{ width:"100%", padding:0, border:"none", background:"transparent", cursor:"pointer", textAlign:"left", borderRadius:22, overflow:"hidden", display:"block" }}>
+              <div style={{ borderRadius:22, overflow:"hidden", background:V.card, border:"1px solid rgba(201,168,76,0.25)", boxShadow:"0 10px 40px rgba(0,0,0,0.4)" }}>
+                <PropertyHero prop={topPick} height={160} />
+                <div style={{ padding:"14px 16px 16px" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:"#fff" }}>{topPick.transaction === "rent" ? fmtRentYr(topPick.price) : fmtAED(topPick.price)}</div>
+                    <ScoreChip score={topPick.score} label={topPick.scoreLabel} />
+                  </div>
+                  <p style={{ fontSize:12.5, fontStyle:"italic", color:V.goldLight, margin:0, lineHeight:1.4 }}>"{topPick.verdict}"</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
+
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.25em", textTransform:"uppercase", color:"rgba(240,239,232,0.4)", marginBottom:10 }}>QUICK START</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {[
+            { label:"Start a new brief",    sub:"Re-qualify for a different search",  icon:"＋" },
+            { label:"Refine current brief",  sub:"Tweak budget, area, or type",        icon:"⇄" },
+          ].map((q, i) => (
+            <button key={i} onClick={onStartNew} style={{
+              display:"flex", alignItems:"center", gap:14, padding:"14px 16px", borderRadius:16,
+              background:V.card, border:`1px solid ${V.border}`,
+              color:V.text, textAlign:"left", cursor:"pointer",
+              transition:`transform 0.18s ${V.easeApple}`,
+            }}
+            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.98)")}
+            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+            onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}>
+              <div style={{ width:34, height:34, borderRadius:10, background:"rgba(201,168,76,0.1)", border:"1px solid rgba(201,168,76,0.2)", display:"flex", alignItems:"center", justifyContent:"center", color:V.gold, fontSize:16, fontWeight:700 }}>{q.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:600, color:"#fff" }}>{q.label}</div>
+                <div style={{ fontSize:11, color:"rgba(240,239,232,0.45)", marginTop:2 }}>{q.sub}</div>
+              </div>
+              <span style={{ fontSize:16, color:"rgba(240,239,232,0.2)" }}>›</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AUTH MODAL ────────────────────────────────────────────────
+function AuthModal({ onSuccess, onClose }: {
+  onSuccess: (sess: Session) => void; onClose: () => void
+}) {
+  const [mode, setMode] = useState<"signin" | "signup">("signin")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+
+  async function submit() {
+    if (!email.trim() || !password) { setError("Email and password required"); return }
+    setLoading(true); setError(null); setInfo(null)
+    const supabase = getSupabase()
+    try {
+      if (mode === "signup") {
+        const { data, error: err } = await supabase.auth.signUp({ email, password })
+        if (err) throw err
+        if (data.session) onSuccess(data.session as unknown as Session)
+        else setInfo("Check your email to confirm, then sign in.")
+      } else {
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
+        if (err) throw err
+        if (data.session) onSuccess(data.session as unknown as Session)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Authentication failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:100,
+      background:"rgba(0,0,0,0.75)", backdropFilter:"blur(8px)",
+      display:"flex", alignItems:"flex-end", justifyContent:"center",
+    }}>
+      <div style={{
+        width:"100%", maxWidth:430,
+        background:"#13131E", borderRadius:"24px 24px 0 0",
+        border:"1px solid rgba(255,255,255,0.08)",
+        padding:"28px 24px 44px",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <div>
+            <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.3em", textTransform:"uppercase", color:"rgba(201,168,76,0.7)", marginBottom:4 }}>VERDICT · BUYER PORTAL</div>
+            <h2 style={{ fontSize:22, fontWeight:700, color:"#fff", margin:0, letterSpacing:"-0.02em" }}>{mode === "signin" ? "Sign in" : "Create account"}</h2>
+          </div>
+          <button onClick={onClose} style={{ width:36, height:36, borderRadius:999, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.05)", color:"rgba(240,239,232,0.6)", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+        <p style={{ fontSize:13, color:"rgba(240,239,232,0.45)", margin:"0 0 20px" }}>
+          Save and contact agents. Free for buyers.
+        </p>
+        {error && <div style={{ marginBottom:14, padding:"11px 14px", borderRadius:12, background:"rgba(232,91,91,0.1)", border:"1px solid rgba(232,91,91,0.25)", color:"#E85B5B", fontSize:13 }}>{error}</div>}
+        {info  && <div style={{ marginBottom:14, padding:"11px 14px", borderRadius:12, background:"rgba(52,199,123,0.08)", border:"1px solid rgba(52,199,123,0.2)", color:"#34C77B", fontSize:13 }}>{info}</div>}
+        <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+          style={{ width:"100%", padding:"13px 15px", borderRadius:13, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.04)", color:"#fff", fontSize:15, outline:"none", marginBottom:12, boxSizing:"border-box" }} />
+        <input type="password" placeholder="Password (min 6 chars)" value={password} onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit()}
+          style={{ width:"100%", padding:"13px 15px", borderRadius:13, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.04)", color:"#fff", fontSize:15, outline:"none", marginBottom:20, boxSizing:"border-box" }} />
+        <button onClick={submit} disabled={loading} style={{
+          width:"100%", padding:"15px", borderRadius:14, border:"none",
+          background:V.ctaGrad, color:"#07070F", fontSize:15, fontWeight:700,
+          cursor:loading ? "wait" : "pointer", opacity:loading ? 0.7 : 1, marginBottom:14,
+        }}>{loading ? "…" : mode === "signin" ? "Sign in" : "Create account"}</button>
+        <p style={{ textAlign:"center", margin:0, fontSize:13, color:"rgba(240,239,232,0.45)" }}>
+          {mode === "signin" ? "No account? " : "Have an account? "}
+          <button onClick={() => { setMode(m => m === "signin" ? "signup" : "signin"); setError(null); setInfo(null) }}
+            style={{ border:"none", background:"transparent", color:V.gold, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            {mode === "signin" ? "Create one" : "Sign in"}
+          </button>
+        </p>
       </div>
     </div>
   )
@@ -1312,28 +1777,84 @@ export default function App() {
   const [detailFromSaved, setDetailFromSaved] = useState<Property | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Auth
+  const [session, setSession] = useState<Session | null>(null)
+  const [showAuth, setShowAuth] = useState(false)
+  const [pendingContact, setPendingContact] = useState<Property | null>(null)
+  const [contactedIds, setContactedIds] = useState<Set<string>>(new Set())
+  const [contactingId, setContactingId] = useState<string | null>(null)
+
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("verdict_seen")) {
-      setScreen("qualify")
+      setScreen("home")
     }
+    const supabase = getSupabase()
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setSession(data.session as unknown as Session)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, sess) => {
+      setSession(sess as unknown as Session | null)
+    })
+    return () => subscription.unsubscribe()
   }, [])
 
   function showToast(name: string) {
     setToast(name)
     if (toastTimer.current) clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 2200)
+    toastTimer.current = setTimeout(() => setToast(null), 2800)
   }
 
   function onQualifyDone(p: Profile) {
     setProfile(p)
-    const filtered = filterProperties(p)
-    setProperties(filtered)
     setScreen("thinking")
   }
 
   function onSave(prop: Property) {
     setSaved(prev => prev.find(x => x.id === prop.id) ? prev : [...prev, prop])
     showToast(prop.name)
+  }
+
+  async function doContactAgent(prop: Property, sess: Session) {
+    setContactingId(prop.id)
+    try {
+      const { score, tier } = calculateQualificationScore(profile)
+      const res = await fetch("/api/leads/create", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${sess.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId: null, profile, qualificationScore: score, tier }),
+      })
+      if (res.ok) {
+        setContactedIds(prev => { const s = new Set(prev); s.add(prop.id); return s })
+        showToast(`Agent connected for ${prop.name}`)
+      } else {
+        const d = await res.json()
+        showToast(d.error ?? "Failed to connect agent")
+      }
+    } catch (_) {
+      showToast("Network error — try again")
+    } finally {
+      setContactingId(null)
+    }
+  }
+
+  function handleContactAgent(prop: Property) {
+    if (contactedIds.has(prop.id) || contactingId) return
+    if (!session) {
+      setPendingContact(prop)
+      setShowAuth(true)
+      return
+    }
+    doContactAgent(prop, session)
+  }
+
+  function onAuthSuccess(sess: Session) {
+    setSession(sess)
+    setShowAuth(false)
+    if (pendingContact) {
+      const p = pendingContact
+      setPendingContact(null)
+      doContactAgent(p, sess)
+    }
   }
 
   return (
@@ -1347,12 +1868,33 @@ export default function App() {
           }} />
         )}
 
+        {screen === "home" && (
+          <div style={{ position:"relative", height:"100%" }}>
+            <HomeScreen
+              saved={saved}
+              onStartNew={() => { setProfile({}); setScreen("qualify") }}
+              onOpenSaved={() => setScreen("saved")}
+              onOpen={p => setDetailFromSaved(p)}
+            />
+            {detailFromSaved && (
+              <DetailSheet
+                prop={detailFromSaved}
+                saved={saved.some(x => x.id === detailFromSaved.id)}
+                onSave={() => onSave(detailFromSaved)}
+                onClose={() => setDetailFromSaved(null)}
+                onContact={() => handleContactAgent(detailFromSaved)}
+                contacted={contactedIds.has(detailFromSaved.id)}
+              />
+            )}
+          </div>
+        )}
+
         {screen === "qualify" && (
           <QualifyFlow onDone={onQualifyDone} onBack={() => setScreen("onboarding")} />
         )}
 
         {screen === "thinking" && (
-          <ThinkingScreen profile={profile} onDone={() => setScreen("swipe")} />
+          <ThinkingScreen profile={profile} onDone={(props) => { setProperties(props); setScreen("swipe") }} />
         )}
 
         {screen === "swipe" && (
@@ -1380,9 +1922,18 @@ export default function App() {
                 saved={saved.some(x => x.id === detailFromSaved.id)}
                 onSave={() => onSave(detailFromSaved)}
                 onClose={() => setDetailFromSaved(null)}
+                onContact={() => handleContactAgent(detailFromSaved)}
+                contacted={contactedIds.has(detailFromSaved.id)}
               />
             )}
           </div>
+        )}
+
+        {showAuth && (
+          <AuthModal
+            onSuccess={onAuthSuccess}
+            onClose={() => { setShowAuth(false); setPendingContact(null) }}
+          />
         )}
 
         {toast && <SaveToast name={toast} />}

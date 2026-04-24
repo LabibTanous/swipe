@@ -307,6 +307,44 @@ $$;
 -- 10. SLA BREACH CHECKER (run via Vercel Cron every 10 min)
 --     Call: supabase.rpc('mark_sla_breaches')
 -- ──────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────
+-- 11. SLA TRACKING TABLE
+-- ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sla_tracking (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  lead_assignment_id    UUID REFERENCES lead_assignments(id),
+  broker_id             UUID REFERENCES users(id),
+  lead_id               UUID REFERENCES leads(id),
+  sla_deadline          TIMESTAMPTZ NOT NULL,
+  breached_at           TIMESTAMPTZ,
+  reassigned_to         UUID REFERENCES users(id),
+  status                TEXT DEFAULT 'active' CHECK (status IN ('active', 'breached', 'reassigned', 'resolved')),
+  created_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE sla_tracking ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "sla_tracking_own" ON sla_tracking
+  FOR SELECT USING (auth.uid() = broker_id);
+
+CREATE INDEX IF NOT EXISTS idx_sla_tracking_broker ON sla_tracking (broker_id);
+CREATE INDEX IF NOT EXISTS idx_sla_tracking_lead   ON sla_tracking (lead_id);
+
+
+-- ──────────────────────────────────────────────────────────
+-- 10. CONTACT EVENTS (analytics tracking)
+-- ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS contact_events (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  listing_id  UUID,
+  cta_type    TEXT NOT NULL,
+  session_id  TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ──────────────────────────────────────────────────────────
+-- 11. SLA BREACH CHECKER (updated — now logs + re-assigns)
+-- ──────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION mark_sla_breaches()
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -314,6 +352,7 @@ SECURITY DEFINER AS $$
 DECLARE
   v_count INTEGER;
 BEGIN
+  -- 1. Mark SLA breaches in lead_assignments
   UPDATE lead_assignments
   SET sla_breached = TRUE
   WHERE contacted_at IS NULL
@@ -321,6 +360,36 @@ BEGIN
     AND sla_breached = FALSE;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  -- 2. Log newly breached assignments to sla_tracking
+  INSERT INTO sla_tracking (lead_assignment_id, broker_id, lead_id, sla_deadline, breached_at, status)
+  SELECT la.id, la.broker_id, la.lead_id,
+         la.unlocked_at + INTERVAL '1 hour',
+         NOW(), 'breached'
+  FROM lead_assignments la
+  WHERE la.sla_breached = TRUE
+    AND la.contacted_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM sla_tracking st WHERE st.lead_assignment_id = la.id
+    );
+
+  -- 3. Re-assign: return lead to pool so another broker can unlock it
+  UPDATE leads l
+  SET status = 'available'
+  FROM lead_assignments la
+  WHERE la.lead_id = l.id
+    AND la.sla_breached = TRUE
+    AND la.contacted_at IS NULL
+    AND l.status = 'unlocked';
+
+  -- 4. Mark sla_tracking entries as reassigned
+  UPDATE sla_tracking st
+  SET status = 'reassigned'
+  FROM lead_assignments la
+  WHERE st.lead_assignment_id = la.id
+    AND la.sla_breached = TRUE
+    AND st.status = 'breached';
+
   RETURN v_count;
 END;
 $$;
