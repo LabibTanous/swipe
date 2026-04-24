@@ -24,3 +24,11 @@ yarn-error.log*
 # vercel
 .vercel
 .env*.local
+
+# Local dev artifacts and nested projects
+verdict/
+verdict-update/
+Verdict UX UPDATE/
+tsconfig.tsbuildinfo
+package-lock.json
+*.baseline
